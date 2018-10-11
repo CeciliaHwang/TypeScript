@@ -49,8 +49,13 @@ namespace ts {
             return { jsFilePath, sourceMapFilePath, declarationFilePath, declarationMapPath, bundleInfoPath };
         }
         else {
-            const jsFilePath = getOwnEmitOutputFilePath(sourceFile.fileName, host, getOutputExtension(sourceFile, options));
-            const sourceMapFilePath = isJsonSourceFile(sourceFile) ? undefined : getSourceMapFilePath(jsFilePath, options);
+            const ownOutputFilePath = getOwnEmitOutputFilePath(sourceFile.fileName, host, getOutputExtension(sourceFile, options));
+            // If json file emits to the same location skip writing it
+            const jsFilePath = isJsonSourceFile(sourceFile) &&
+                comparePaths(sourceFile.fileName, ownOutputFilePath, host.getCurrentDirectory(), !host.useCaseSensitiveFileNames()) === Comparison.EqualTo ?
+                undefined :
+                ownOutputFilePath;
+            const sourceMapFilePath = isJsonSourceFile(sourceFile) ? undefined : getSourceMapFilePath(jsFilePath!, options);
             // For legacy reasons (ie, we have baselines capturing the behavior), js files don't report a .d.ts output path - this would only matter if `declaration` and `allowJs` were both on, which is currently an error
             const isJs = isSourceFileJS(sourceFile);
             const declarationFilePath = ((forceDtsPaths || getEmitDeclarations(options)) && !isJs) ? getDeclarationEmitOutputFilePath(sourceFile.fileName, host) : undefined;
@@ -134,7 +139,7 @@ namespace ts {
             emitDeclarationFileOrBundle(sourceFileOrBundle, declarationFilePath, declarationMapPath);
 
             if (!emitSkipped && emittedFilesList) {
-                if (!emitOnlyDtsFiles) {
+                if (!emitOnlyDtsFiles && jsFilePath) {
                     emittedFilesList.push(jsFilePath);
                 }
                 if (sourceMapFilePath) {
@@ -149,13 +154,13 @@ namespace ts {
             }
         }
 
-        function emitJsFileOrBundle(sourceFileOrBundle: SourceFile | Bundle, jsFilePath: string, sourceMapFilePath: string | undefined, bundleInfoPath: string | undefined) {
+        function emitJsFileOrBundle(sourceFileOrBundle: SourceFile | Bundle, jsFilePath: string | undefined, sourceMapFilePath: string | undefined, bundleInfoPath: string | undefined) {
             // Make sure not to write js file and source map file if any of them cannot be written
-            if (host.isEmitBlocked(jsFilePath) || compilerOptions.noEmit || compilerOptions.emitDeclarationOnly) {
+            if ((jsFilePath && host.isEmitBlocked(jsFilePath)) || compilerOptions.noEmit || compilerOptions.emitDeclarationOnly) {
                 emitSkipped = true;
                 return;
             }
-            if (emitOnlyDtsFiles) {
+            if (emitOnlyDtsFiles || !jsFilePath) {
                 return;
             }
             // Transform the source files
